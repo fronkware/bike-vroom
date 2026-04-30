@@ -1,10 +1,582 @@
 <!DOCTYPE html>
-<html>
+<html lang="en">
 <head>
-    <title>Bike Vroom</title>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Garmin Moto-Dash Pro</title>
+    <style>
+        :root {
+            --bg: #111111;
+            --text-main: #ffffff;
+            --text-dim: #888888;
+            --accent-speed: #00ffcc;
+            --accent-cadence: #ff0055;
+            --btn-bg: #222222;
+            --panel-bg: #1a1a1a;
+            --debug-bg: #050505;
+        }
+
+        body {
+            margin: 0;
+            padding: 0;
+            background-color: var(--bg);
+            color: var(--text-main);
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+            display: flex;
+            flex-direction: column;
+            height: 100dvh; 
+            height: 100vh;
+            overflow: hidden;
+        }
+
+        /* --- DASHBOARD --- */
+        .dashboard {
+            flex: 1 1 auto;
+            display: flex;
+            flex-direction: row;
+            justify-content: space-evenly;
+            align-items: center;
+            padding: 2vmin;
+            min-height: 0;
+        }
+
+        .metric-card {
+            text-align: center;
+            width: 100%;
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+        }
+
+        .value {
+            font-size: clamp(3rem, 15vmin, 120px);
+            font-weight: 800;
+            line-height: 1;
+            font-variant-numeric: tabular-nums;
+            letter-spacing: -2px;
+        }
+
+        .label {
+            font-size: clamp(0.7rem, 2.5vmin, 1rem);
+            font-weight: 600;
+            color: var(--text-dim);
+            text-transform: uppercase;
+            letter-spacing: 2px;
+            margin-top: 5px;
+        }
+
+        #speedVal { color: var(--accent-speed); }
+        #cadenceVal { color: var(--accent-cadence); }
+
+        /* --- CONTROLS --- */
+        .controls {
+            flex: 0 0 auto;
+            display: flex;
+            padding: 10px 20px;
+            gap: 10px;
+        }
+
+        button {
+            flex: 1;
+            background-color: var(--btn-bg);
+            color: var(--text-main);
+            border: 2px solid #333;
+            padding: 15px 10px;
+            border-radius: 8px;
+            font-size: 0.9rem;
+            font-weight: bold;
+            text-transform: uppercase;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+        button:active { background-color: #444; }
+        button.connected { border-color: #00ff00; color: #00ff00; }
+
+        /* --- TUNING PANELS --- */
+        .tuning-section {
+            flex: 0 0 auto;
+            background: var(--panel-bg);
+            border-top: 1px solid #333;
+            padding: 15px 20px;
+            display: flex;
+            flex-direction: column;
+            gap: 15px;
+            overflow-y: auto;
+            max-height: 35vh; /* Keep it from taking over the screen */
+        }
+
+        .tuning-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 15px;
+        }
+
+        .slider-group { display: flex; flex-direction: column; }
+        .slider-group label { font-size: 0.75rem; color: var(--text-dim); margin-bottom: 5px; display: flex; justify-content: space-between; }
+        input[type=range] { width: 100%; accent-color: #f39c12; }
+        select { background: #333; color: white; border: 1px solid #555; padding: 4px; border-radius: 4px; font-size: 0.8rem; }
+
+        details { background: #222; border-radius: 6px; padding: 10px; }
+        summary { cursor: pointer; font-size: 0.8rem; font-weight: bold; color: #f39c12; outline: none; user-select: none; }
+        .advanced-grid { margin-top: 15px; display: grid; grid-template-columns: 1fr 1fr; gap: 15px; }
+
+        /* --- DEBUG TERMINAL --- */
+        .debug-wrapper {
+            flex: 0 0 20%;
+            min-height: 100px;
+            background-color: var(--debug-bg);
+            border-top: 2px solid #333;
+            display: flex;
+            flex-direction: column;
+        }
+
+        .debug-header {
+            display: flex; justify-content: space-between; align-items: center;
+            padding: 5px 15px;
+            background: #222;
+            font-size: 0.8rem;
+            color: var(--text-dim);
+            font-weight: bold;
+        }
+
+        .debug-header label { cursor: pointer; display: flex; align-items: center; gap: 5px; font-weight: normal; }
+        .debug-header button { flex: none; padding: 3px 8px; font-size: 0.7rem; background: transparent; border: 1px solid #555; }
+
+        #debugLog {
+            flex: 1;
+            padding: 10px 15px;
+            margin: 0;
+            overflow-y: auto;
+            font-family: ui-monospace, "Cascadia Code", "Source Code Pro", Menlo, Consolas, monospace;
+            font-size: 0.75rem;
+            color: #00ff00;
+            white-space: pre-wrap;
+        }
+    </style>
 </head>
 <body>
-    <h1>Welcome to Bike Vroom!</h1>
-    <p>This is a basic HTML page.</p>
+
+    <div class="dashboard">
+        <div class="metric-card">
+            <div class="value" id="speedVal">0.0</div>
+            <div class="label">Speed (MPH)</div>
+        </div>
+        <div class="metric-card">
+            <div class="value" id="cadenceVal">0</div>
+            <div class="label">Cadence (RPM)</div>
+        </div>
+    </div>
+
+    <div class="controls">
+        <button id="btnSpeed">Pair Speed</button>
+        <button id="btnCadence">Pair Cadence</button>
+    </div>
+
+    <div class="tuning-section">
+        <div class="tuning-grid">
+            <div class="slider-group">
+                <label>Volume <span id="lblVol">50%</span></label>
+                <input type="range" id="slVol" min="0" max="100" value="50">
+            </div>
+            <div class="slider-group">
+                <label>Idle Pitch (Hz) <span id="lblPitch">35</span></label>
+                <input type="range" id="slPitch" min="15" max="80" value="35">
+            </div>
+            <div class="slider-group">
+                <label>Rev Multiplier <span id="lblRev">1.5x</span></label>
+                <input type="range" id="slRev" min="0.5" max="5.0" step="0.1" value="1.5">
+            </div>
+            <div class="slider-group">
+                <label>Muffle (Filter) <span id="lblFilter">400Hz</span></label>
+                <input type="range" id="slFilter" min="100" max="2000" value="400">
+            </div>
+        </div>
+
+        <details>
+            <summary>ADVANCED TUNING (Feel & Tone)</summary>
+            <div class="advanced-grid">
+                <div class="slider-group">
+                    <label>Engine Tone (Waveform)</label>
+                    <select id="selWave">
+                        <option value="sawtooth" selected>Sawtooth (Harsh/Buzzy)</option>
+                        <option value="square">Square (Retro/Chiptune)</option>
+                        <option value="triangle">Triangle (Hollow/Muted)</option>
+                        <option value="sine">Sine (Smooth/UFO)</option>
+                    </select>
+                </div>
+                <div class="slider-group">
+                    <label>Responsiveness (UI Inertia) <span id="lblInertia">1.5%</span></label>
+                    <input type="range" id="slInertia" min="0.5" max="10" step="0.5" value="1.5">
+                </div>
+                <div class="slider-group" style="grid-column: span 2;">
+                    <label>Pitch Glide (Audio Delay) <span id="lblGlide">0.10s</span></label>
+                    <input type="range" id="slGlide" min="0.01" max="0.5" step="0.01" value="0.10">
+                </div>
+            </div>
+        </details>
+    </div>
+
+    <div class="debug-wrapper">
+        <div class="debug-header">
+            <span>DIAGNOSTIC TERMINAL</span>
+            <div style="display: flex; gap: 15px;">
+                <label><input type="checkbox" id="chkRawData" checked> Raw Data</label>
+                <button onclick="document.getElementById('debugLog').textContent=''">CLEAR</button>
+            </div>
+        </div>
+        <pre id="debugLog">System initialized. Awaiting sensor connections...</pre>
+    </div>
+
+    <script>
+        // ==========================================
+        // 1. AUDIO SYNTHESIZER
+        // ==========================================
+        class EngineSynth {
+            constructor() {
+                this.ctx = new (window.AudioContext || window.webkitAudioContext)();
+                
+                this.masterGain = this.ctx.createGain();
+                this.masterGain.gain.value = 0; 
+                this.masterGain.connect(this.ctx.destination);
+
+                this.osc = this.ctx.createOscillator();
+                this.osc.type = 'sawtooth'; // Default buzzy engine
+                
+                this.filter = this.ctx.createBiquadFilter();
+                this.filter.type = 'lowpass';
+                
+                this.osc.connect(this.filter);
+                this.filter.connect(this.masterGain);
+                this.osc.start();
+
+                this.isRunning = false;
+                
+                // Tuning Variables
+                this.baseFreq = 35;
+                this.speedMult = 1.5;
+                this.vol = 0.5;
+                this.audioGlide = 0.1; // Advanced: How fast pitch changes
+                this.filter.frequency.value = 400;
+            }
+
+            unlock() {
+                if (this.ctx.state === 'suspended') this.ctx.resume();
+            }
+
+            startup() {
+                if (this.isRunning) return;
+                this.unlock();
+                this.isRunning = true;
+                
+                const now = this.ctx.currentTime;
+                this.osc.frequency.cancelScheduledValues(now);
+                this.osc.frequency.setValueAtTime(10, now);
+                this.osc.frequency.exponentialRampToValueAtTime(this.baseFreq, now + 0.6);
+                
+                this.masterGain.gain.cancelScheduledValues(now);
+                this.masterGain.gain.setValueAtTime(0, now);
+                this.masterGain.gain.linearRampToValueAtTime(this.vol, now + 0.2);
+            }
+
+            shutdown() {
+                if (!this.isRunning) return;
+                this.isRunning = false;
+                
+                const now = this.ctx.currentTime;
+                this.osc.frequency.cancelScheduledValues(now);
+                this.osc.frequency.setValueAtTime(this.osc.frequency.value, now);
+                this.osc.frequency.exponentialRampToValueAtTime(5, now + 1.5);
+                
+                this.masterGain.gain.cancelScheduledValues(now);
+                this.masterGain.gain.setValueAtTime(this.masterGain.gain.value, now);
+                this.masterGain.gain.linearRampToValueAtTime(0, now + 1.5);
+            }
+
+            updateSpeed(speedMph) {
+                if (!this.isRunning) return;
+                const targetFreq = this.baseFreq + (speedMph * this.speedMult);
+                // Use the advanced Glide variable for responsiveness
+                this.osc.frequency.setTargetAtTime(targetFreq, this.ctx.currentTime, this.audioGlide);
+            }
+
+            shiftGear() {
+                if (!this.isRunning) return;
+                const now = this.ctx.currentTime;
+                const currentFreq = this.osc.frequency.value;
+                
+                this.osc.frequency.cancelScheduledValues(now);
+                this.osc.frequency.setValueAtTime(currentFreq, now);
+                this.osc.frequency.exponentialRampToValueAtTime(currentFreq * 0.5, now + 0.1); 
+                this.osc.frequency.exponentialRampToValueAtTime(currentFreq, now + 0.5); 
+            }
+
+            downshift() {
+                if (!this.isRunning) return;
+                const now = this.ctx.currentTime;
+                const currentFreq = this.osc.frequency.value;
+                
+                this.osc.frequency.cancelScheduledValues(now);
+                this.masterGain.gain.cancelScheduledValues(now);
+
+                this.osc.frequency.setValueAtTime(currentFreq, now);
+                this.osc.frequency.exponentialRampToValueAtTime(currentFreq * 0.8, now + 0.05);
+
+                this.osc.frequency.exponentialRampToValueAtTime(currentFreq * 2.5, now + 0.2);
+                this.masterGain.gain.setValueAtTime(this.vol, now);
+                this.masterGain.gain.linearRampToValueAtTime(Math.min(this.vol * 1.8, 1.0), now + 0.1);
+
+                this.osc.frequency.exponentialRampToValueAtTime(currentFreq * 1.2, now + 1.5);
+                this.masterGain.gain.linearRampToValueAtTime(this.vol, now + 1.5);
+            }
+
+            freeRev() {
+                if (!this.isRunning) return;
+                const now = this.ctx.currentTime;
+                
+                this.osc.frequency.cancelScheduledValues(now);
+                this.masterGain.gain.cancelScheduledValues(now);
+
+                this.osc.frequency.setValueAtTime(this.osc.frequency.value, now);
+                this.osc.frequency.exponentialRampToValueAtTime(this.baseFreq * 4.0, now + 0.1);
+                
+                this.masterGain.gain.setValueAtTime(this.masterGain.gain.value, now);
+                this.masterGain.gain.linearRampToValueAtTime(1.0, now + 0.1);
+
+                this.osc.frequency.exponentialRampToValueAtTime(this.baseFreq, now + 1.2);
+                this.masterGain.gain.linearRampToValueAtTime(this.vol, now + 1.2);
+            }
+        }
+
+        const engine = new EngineSynth();
+
+        // ==========================================
+        // 2. UI BINDINGS (Basic & Advanced)
+        // ==========================================
+        let uiInertia = 0.015; // Global variable for visual responsiveness
+
+        document.getElementById('slVol').addEventListener('input', (e) => {
+            engine.vol = e.target.value / 100;
+            if (engine.isRunning) engine.masterGain.gain.setTargetAtTime(engine.vol, engine.ctx.currentTime, 0.1);
+            document.getElementById('lblVol').innerText = e.target.value + '%';
+        });
+        document.getElementById('slPitch').addEventListener('input', (e) => {
+            engine.baseFreq = parseFloat(e.target.value);
+            document.getElementById('lblPitch').innerText = e.target.value;
+        });
+        document.getElementById('slRev').addEventListener('input', (e) => {
+            engine.speedMult = parseFloat(e.target.value);
+            document.getElementById('lblRev').innerText = e.target.value + 'x';
+        });
+        document.getElementById('slFilter').addEventListener('input', (e) => {
+            engine.filter.frequency.setTargetAtTime(e.target.value, engine.ctx.currentTime, 0.1);
+            document.getElementById('lblFilter').innerText = e.target.value + 'Hz';
+        });
+
+        // Advanced Panel Bindings
+        document.getElementById('selWave').addEventListener('change', (e) => {
+            engine.osc.type = e.target.value; // Instantly changes the "buzz" profile
+        });
+        document.getElementById('slInertia').addEventListener('input', (e) => {
+            uiInertia = parseFloat(e.target.value) / 100;
+            document.getElementById('lblInertia').innerText = e.target.value + '%';
+        });
+        document.getElementById('slGlide').addEventListener('input', (e) => {
+            engine.audioGlide = parseFloat(e.target.value);
+            document.getElementById('lblGlide').innerText = engine.audioGlide.toFixed(2) + 's';
+        });
+
+
+        // ==========================================
+        // 3. DASHBOARD DATA & LOGIC
+        // ==========================================
+        const WHEEL_CIRCUMFERENCE_M = 2.1425; 
+        const SPEED_TIMEOUT_MS = 3000;
+        const CADENCE_TIMEOUT_MS = 3000;
+
+        let prevWheelRevs = null, prevWheelTime = null;
+        let lastRealWheelEventTime = 0;
+        let targetSpeedMPH = 0, displaySpeedMPH = 0; 
+        const speedHistory = [];
+
+        let prevCrankRevs = null, prevCrankTime = null;
+        let lastRealCrankEventTime = 0;
+        let displayCadenceRPM = 0;
+
+        let cadenceZeroStartTime = 0; 
+        let cadenceLowTimestamp = 0; 
+        let isFreeRevving = false;
+
+        const debugLog = document.getElementById('debugLog');
+        const chkRawData = document.getElementById('chkRawData');
+
+        function log(msg) {
+            const time = new Date().toISOString().split('T')[1].slice(0, -1);
+            debugLog.textContent += `\n[${time}] ${msg}`;
+            debugLog.scrollTop = debugLog.scrollHeight;
+        }
+
+        async function connectNode(type) {
+            engine.unlock(); 
+            const btn = type === 'SPEED' ? document.getElementById('btnSpeed') : document.getElementById('btnCadence');
+            try {
+                const device = await navigator.bluetooth.requestDevice({ filters: [{ services: ['cycling_speed_and_cadence'] }] });
+                const server = await device.gatt.connect();
+                const service = await server.getPrimaryService('cycling_speed_and_cadence');
+                const characteristic = await service.getCharacteristic('00002a5b-0000-1000-8000-00805f9b34fb');
+
+                await characteristic.startNotifications();
+                characteristic.addEventListener('characteristicvaluechanged', (e) => handleData(e, type));
+                
+                btn.classList.add('connected');
+                btn.innerText = `${type} Active`;
+                log(`[SUCCESS] ${type} connected.`);
+            } catch (error) { log(`[ERROR] ${type}: ${error}`); }
+        }
+
+        document.getElementById('btnSpeed').addEventListener('click', () => connectNode('SPEED'));
+        document.getElementById('btnCadence').addEventListener('click', () => connectNode('CADENCE'));
+
+        function handleData(event, type) {
+            const value = event.target.value; 
+            const flags = value.getUint8(0);
+            const wheelDataPresent = flags & 0x01;
+            const crankDataPresent = flags & 0x02;
+            let offset = 1;
+            const now = performance.now();
+
+            if (wheelDataPresent) {
+                const cumulativeWheelRevs = value.getUint32(offset, true);
+                offset += 4;
+                const lastWheelEventTime = value.getUint16(offset, true);
+                offset += 2;
+
+                if (prevWheelRevs !== null) {
+                    let deltaRevs = cumulativeWheelRevs - prevWheelRevs;
+                    if (deltaRevs < 0) deltaRevs += 4294967296; 
+                    if (deltaRevs > 0) {
+                        let deltaTime = lastWheelEventTime - prevWheelTime;
+                        if (deltaTime < 0) deltaTime += 65536; 
+
+                        if (deltaTime > 0) {
+                            const timeInSec = deltaTime / 1024;
+                            const rawSpeedMPH = ((deltaRevs * WHEEL_CIRCUMFERENCE_M) / timeInSec) * 2.23694;
+                            
+                            if (chkRawData.checked) {
+                                log(`[WHEEL] dRevs: ${deltaRevs} | dTime: ${deltaTime} | Raw: ${rawSpeedMPH.toFixed(1)} mph`);
+                            }
+
+                            speedHistory.push(rawSpeedMPH);
+                            if (speedHistory.length > 4) speedHistory.shift(); 
+                            let avgSpeed = speedHistory.reduce((a, b) => a + b, 0) / speedHistory.length;
+                            
+                            targetSpeedMPH = Math.min(avgSpeed, 40);
+                            lastRealWheelEventTime = now;
+                        }
+                    }
+                }
+                prevWheelRevs = cumulativeWheelRevs;
+                prevWheelTime = lastWheelEventTime;
+            }
+
+            if (crankDataPresent) {
+                const cumulativeCrankRevs = value.getUint16(offset, true);
+                offset += 2;
+                const lastCrankEventTime = value.getUint16(offset, true);
+
+                if (prevCrankRevs !== null) {
+                    let deltaCrank = cumulativeCrankRevs - prevCrankRevs;
+                    if (deltaCrank < 0) deltaCrank += 65536;
+                    if (deltaCrank > 0) {
+                        let deltaTimeC = lastCrankEventTime - prevCrankTime;
+                        if (deltaTimeC < 0) deltaTimeC += 65536;
+                        if (deltaTimeC > 0) {
+                            displayCadenceRPM = Math.round((deltaCrank / (deltaTimeC / 1024)) * 60);
+                            lastRealCrankEventTime = now;
+
+                            if (chkRawData.checked) {
+                                log(`[CRANK] dRevs: ${deltaCrank} | dTime: ${deltaTimeC} | ${displayCadenceRPM} RPM`);
+                            }
+                        }
+                    }
+                }
+                prevCrankRevs = cumulativeCrankRevs;
+                prevCrankTime = lastCrankEventTime;
+            }
+        }
+
+        // ==========================================
+        // 4. MAIN UI & ENGINE LOOP
+        // ==========================================
+        function updateUI() {
+            const now = performance.now();
+
+            if (now - lastRealWheelEventTime > SPEED_TIMEOUT_MS) { targetSpeedMPH = 0; speedHistory.length = 0; }
+            if (now - lastRealCrankEventTime > CADENCE_TIMEOUT_MS) { displayCadenceRPM = 0; }
+
+            const timeSinceAnyEvent = now - Math.max(lastRealWheelEventTime, lastRealCrankEventTime);
+            const hasEverReceivedData = (lastRealWheelEventTime > 0 || lastRealCrankEventTime > 0);
+            
+            if (timeSinceAnyEvent < 5000 && !engine.isRunning && hasEverReceivedData) {
+                engine.startup();
+                log("[ENGINE] Started!");
+            } else if (timeSinceAnyEvent >= 5000 && engine.isRunning) {
+                engine.shutdown();
+                log("[ENGINE] Stopped due to inactivity.");
+            }
+
+            if (engine.isRunning) engine.updateSpeed(displaySpeedMPH);
+
+            if (targetSpeedMPH === 0) {
+                if (displayCadenceRPM >= 60 && !isFreeRevving) {
+                    engine.freeRev();
+                    log(`[ENGINE] NEUTRAL REV! Redlining...`);
+                    isFreeRevving = true; 
+                } else if (displayCadenceRPM < 30) {
+                    isFreeRevving = false; 
+                }
+            } else {
+                isFreeRevving = false; 
+
+                if (displayCadenceRPM === 0) {
+                    if (cadenceZeroStartTime === 0) cadenceZeroStartTime = now;
+                } else {
+                    if (cadenceZeroStartTime > 0) {
+                        if ((now - cadenceZeroStartTime) >= 2000 && targetSpeedMPH > 10) {
+                            engine.shiftGear();
+                            log("[ENGINE] Upshift Triggered!");
+                        }
+                        cadenceZeroStartTime = 0; 
+                    }
+                }
+
+                const isDecelerating = targetSpeedMPH < displaySpeedMPH - 0.5;
+
+                if (displayCadenceRPM < 30) cadenceLowTimestamp = now;
+
+                if (isDecelerating && displayCadenceRPM > 60 && cadenceLowTimestamp > 0) {
+                    if ((now - cadenceLowTimestamp) <= 2000) { 
+                        engine.downshift();
+                        log(`[ENGINE] DOWNSHIFT! Rev-match at ${displaySpeedMPH.toFixed(1)} MPH`);
+                        cadenceLowTimestamp = 0; 
+                    }
+                }
+
+                if (now - cadenceLowTimestamp > 2000) cadenceLowTimestamp = 0;
+            }
+
+            // Apply Advanced Responsiveness Tuning
+            displaySpeedMPH += (targetSpeedMPH - displaySpeedMPH) * uiInertia;
+            if (displaySpeedMPH < 0.1) displaySpeedMPH = 0;
+
+            document.getElementById('speedVal').innerText = displaySpeedMPH.toFixed(1);
+            document.getElementById('cadenceVal').innerText = displayCadenceRPM;
+
+            requestAnimationFrame(updateUI);
+        }
+
+        requestAnimationFrame(updateUI);
+
+    </script>
 </body>
 </html>
